@@ -354,10 +354,10 @@ Public Class FormMain
 
         Logger.Info($"第二阶段加载用时：{GetTimeMs() - ApplicationStartTick} ms")
     End Sub
+    Private Pcl2AutoImportStarted As Boolean
     Private Async Sub FormMain_Pcl2AutoImport(sender As Object, e As EventArgs) Handles Me.ContentRendered
-        Static Started As Boolean = False
-        If Started Then Return
-        Started = True
+        If Pcl2AutoImportStarted Then Return
+        Pcl2AutoImportStarted = True
         Try
             If FrmSetupSystem Is Nothing Then FrmSetupSystem = New PageSetupSystem
             Await FrmSetupSystem.ImportDetectedPcl2Async(True)

@@ -98,7 +98,7 @@ jobs:
       run: |
         New-Item -ItemType Directory -Path artifacts -Force | Out-Null
         $archive = "artifacts\OpenLaunch-Windows-$env:CONFIGURATION.zip"
-        Compress-Archive -Path OpenLaunch\bin\OpenLaunch.exe -DestinationPath $archive
+        Compress-Archive -Path 'OpenLaunch\bin\OpenLaunch.exe', 'LICENCE', 'README.md' -DestinationPath $archive
         $hash = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
         "$hash  $(Split-Path $archive -Leaf)" | Set-Content -Path "$archive.sha256" -Encoding utf8
 
