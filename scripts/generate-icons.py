@@ -101,7 +101,11 @@ def main():
     stale = []
     for path, data in outputs().items():
         if args.check:
-            if not path.exists() or path.read_bytes() != data:
+            current = path.read_bytes() if path.exists() else None
+            # Git may check text files out with CRLF on Windows.
+            if current is not None and path.suffix == ".xaml":
+                current = current.replace(b"\r\n", b"\n")
+            if current != data:
                 stale.append(str(path.relative_to(ROOT)))
         else:
             path.write_bytes(data)
