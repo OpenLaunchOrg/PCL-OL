@@ -1,0 +1,130 @@
+name: Build and release
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+    paths:
+      - 'OpenLaunch/**'
+      - 'OpenLaunchCore/**'
+      - 'MeloongCore/**'
+      - 'OpenLaunch.sln'
+      - 'scripts/**'
+      - 'tests/**'
+      - '.github/workflows/**'
+  pull_request:
+    paths:
+      - 'OpenLaunch/**'
+      - 'OpenLaunchCore/**'
+      - 'MeloongCore/**'
+      - 'OpenLaunch.sln'
+      - 'scripts/**'
+      - 'tests/**'
+      - '.github/workflows/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-import:
+    name: Import tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+    - uses: actions/checkout@v6
+    - uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '8.0.x'
+    - run: dotnet run --project tests/Pcl2Import.Tests/Pcl2Import.Tests.csproj --configuration Release
+
+  build:
+    name: Windows ${{ matrix.configuration }}
+    needs: test-import
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        configuration: [Debug, Release]
+
+    steps:
+
+    - name: Checkout
+      uses: actions/checkout@v6
+      with:
+        fetch-depth: 1
+        submodules: true
+
+    - name: Setup MSBuild.exe
+      uses: microsoft/setup-msbuild@v3
+      with:
+        msbuild-architecture: x64
+
+    - name: Verify OpenLaunch icon assets
+      run: python scripts/generate-icons.py --check
+
+    - name: Replace
+      env:
+        CLIENT_ID: ${{ secrets.CLIENT_ID }}
+        CURSEFORGE_API_KEY: ${{ secrets.CURSEFORGE_API_KEY }}
+        COMMIT_HASH: ${{ github.sha }}
+      run: |
+        $path = 'OpenLaunch\Modules\ModSecret.vb'
+        $source = Get-Content -Raw $path
+        $clientId = ([string]$env:CLIENT_ID).Replace('"', '""')
+        $curseForgeKey = ([string]$env:CURSEFORGE_API_KEY).Replace('"', '""')
+        $source = $source.Replace('If(Environment.GetEnvironmentVariable("PCL_MS_CLIENT_ID"), "")', ('If(Environment.GetEnvironmentVariable("PCL_MS_CLIENT_ID"), "' + $clientId + '")'))
+        $source = $source.Replace('If(Environment.GetEnvironmentVariable("PCL_CURSEFORGE_API_KEY"), "")', ('If(Environment.GetEnvironmentVariable("PCL_CURSEFORGE_API_KEY"), "' + $curseForgeKey + '")'))
+        Set-Content -Path $path -Value $source -Encoding utf8
+        $path = 'OpenLaunch\Modules\Base\ModBase.vb'
+        $source = (Get-Content -Raw $path).Replace('Public Const CommitHash As String = ""', ('Public Const CommitHash As String = "' + $env:COMMIT_HASH + '"'))
+        Set-Content -Path $path -Value $source -Encoding utf8
+
+    - name: Restore NuGet Packages
+      run: dotnet restore OpenLaunchCore\OpenLaunchCore.csproj
+
+    - name: Build
+      run: msbuild "OpenLaunch\OpenLaunch.vbproj" -p:Configuration=${{ matrix.configuration }}
+
+    - name: Package Windows launcher
+      env:
+        CONFIGURATION: ${{ matrix.configuration }}
+      run: |
+        New-Item -ItemType Directory -Path artifacts -Force | Out-Null
+        $archive = "artifacts\OpenLaunch-Windows-$env:CONFIGURATION.zip"
+        Compress-Archive -Path OpenLaunch\bin\OpenLaunch.exe -DestinationPath $archive
+        $hash = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+        "$hash  $(Split-Path $archive -Leaf)" | Set-Content -Path "$archive.sha256" -Encoding utf8
+
+    - name: Upload a Build Artifact
+      uses: actions/upload-artifact@v7
+      with:
+        name: OpenLaunch-${{ matrix.configuration }}
+        path: artifacts/*
+        if-no-files-found: error
+        retention-days: 30
+
+  release:
+    name: Publish tagged release
+    needs: [test-import, build]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+    - uses: actions/checkout@v6
+    - uses: actions/download-artifact@v5
+      with:
+        name: OpenLaunch-Release
+        path: release
+    - name: Publish Windows package
+      env:
+        GH_TOKEN: ${{ github.token }}
+        RELEASE_TAG: ${{ github.ref_name }}
+      run: gh release create "$RELEASE_TAG" release/* --verify-tag --title "OpenLaunch $RELEASE_TAG" --generate-notes
