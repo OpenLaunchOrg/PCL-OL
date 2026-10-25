@@ -222,7 +222,7 @@ static void DetectLatest() {
     using var f = new Fixture();
     var common = Path.Combine(f.Root, "Downloads");
     var older = Path.Combine(common, "PCL2-old");
-    var newer = Path.Combine(common, "Minecraft/PCL2-new");
+    var newer = Path.Combine(common, "Minecraft", "PCL2-new");
     PutSetup(older, "LaunchArgumentTitle:old\n");
     PutSetup(newer, "LaunchArgumentTitle:new\n");
     File.SetLastWriteTimeUtc(Path.Combine(older, "PCL/Setup.ini"), DateTime.UtcNow.AddDays(-2));
@@ -353,7 +353,7 @@ sealed class Fixture : IDisposable {
     public void SourceFile(string relative, string text) => Put(Path.Combine(SourceData, relative), text);
     public void TargetFile(string relative, string text) => Put(Target(relative), text);
     public string Game(string relative) {
-        string game = Path.Combine(Source, relative);
+        string game = Path.GetFullPath(Path.Combine(Source, relative));
         Put(Path.Combine(game, "versions/1.21/1.21.json"), "{}");
         return game;
     }
